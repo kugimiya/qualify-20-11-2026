@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Входящие заявки</title>
+  <style>
+    body { max-width: 40rem; margin: 2rem auto; padding: 0 1rem; font: 1rem/1.5 system-ui, sans-serif; }
+    textarea { box-sizing: border-box; display: block; width: 100%; margin: .5rem 0; padding: .5rem; font: inherit; }
+    button { padding: .4rem .8rem; font: inherit; }
+    #status { margin-top: 1rem; }
+    #topic, #draft { white-space: pre-wrap; }
+    #draft { margin-top: .5rem; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Входящие заявки</h1>
+  <form>
+    <label for="message">Текст заявки</label>
+    <textarea id="message" rows="4"></textarea>
+    <button type="submit">Разобрать заявку</button>
+  </form>
+  <div id="status" aria-live="polite"></div>
+  <div id="output" class="hidden">
+    <p><strong>Тема:</strong> <span id="topic"></span></p>
+    <p><strong>Черновик:</strong></p>
+    <pre id="draft"></pre>
+  </div>
+  <script type="module">
+    const form = document.querySelector("form");
+    const statusEl = document.querySelector("#status");
+    const output = document.querySelector("#output");
+    const topicEl = document.querySelector("#topic");
+    const draftEl = document.querySelector("#draft");
+    let latestRequestId = 0;
+
+    function clearResult() {
+      topicEl.textContent = "";
+      draftEl.textContent = "";
+      output.classList.add("hidden");
+    }
+
+    function showReady(topic, draft) {
+      statusEl.textContent = "";
+      topicEl.textContent = topic;
+      draftEl.textContent = draft;
+      output.classList.remove("hidden");
+    }
+
+    function showManualReview() {
+      clearResult();
+      statusEl.textContent =
+        "Не удалось автоматически разобрать заявку. Обработайте её вручную.";
+    }
+
+    function showError(message) {
+      clearResult();
+      statusEl.textContent = message;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const requestId = ++latestRequestId;
+      statusEl.textContent = "Разбираем заявку…";
+
+      try {
+        const reply = await fetch("/api/triage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: document.querySelector("#message").value }),
+        });
+        const data = await reply.json();
+        if (requestId !== latestRequestId) return;
+
+        if (data.status === "ready") {
+          showReady(data.topic, data.draft);
+          return;
+        }
+        if (data.status === "manual_review") {
+          showManualReview();
+          return;
+        }
+        if (data.status === "invalid_input") {
+          showError("Введите непустой текст заявки.");
+          return;
+        }
+        showError("Не удалось разобрать заявку. Попробуйте ещё раз.");
+      } catch {
+        if (requestId !== latestRequestId) return;
+        showError("Ошибка сети. Проверьте соединение и попробуйте снова.");
+      }
+    });
+  </script>
+</body>
+</html>
